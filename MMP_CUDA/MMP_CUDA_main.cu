@@ -27,13 +27,9 @@ const int S = 134862;
 const int m = 247;
 const int K = S / m;
 
-const int grid_size = 26;
-const int block_size = 39;
-
 const int grid_size_m = 13;
 const int block_size_m = 19;
 
-const int per_thread = S / (grid_size * block_size);
 const int per_thread_m = m / (grid_size_m * block_size_m);
 
 // Submatrices in main algorithm
@@ -61,8 +57,74 @@ double gamma[K][m];
 // Solution of SLAE
 double y[K][m];
 
-// Functions
+// Device variables
 
+double *dev_a = new double[m*m];
+double *dev_b = new double[m*m];
+double *dev_c = new double[m*m];
+double *dev_d = new double[m*m];
+double *dev_e = new double[m*m];
+double *dev_f = new double[m];
+
+double *dev_tmpv = new double[m];
+double *dev_tmpv2 = new double[m];
+double *dev_tmpv3 = new double[m];
+double *dev_tmpm = new double[m*m];
+double *dev_tmpm2 = new double[m*m];
+double *dev_tmpm3 = new double[m*m];
+double *dev_delta = new double[m*m];
+double *dev_alpha = new double[m*m];
+double *dev_beta = new double[m*m];
+double *dev_gamma = new double[m];
+
+double *dev_y = new double[m];
+
+void CUDA_prep() {
+	CUDA_CALL(cudaMalloc((void**)&dev_a, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_b, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_c, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_d, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_e, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_f, m * sizeof(double)));
+
+	CUDA_CALL(cudaMalloc((void**)&dev_tmpv, m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_tmpv2, m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_tmpv3, m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_tmpm, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_tmpm2, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_tmpm3, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_delta, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_alpha, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_beta, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc((void**)&dev_gamma, m * sizeof(double)));
+
+	CUDA_CALL(cudaMalloc((void**)&dev_y, m * sizeof(double)));
+}
+
+void CUDA_end() {
+	cudaFree(dev_a);
+	cudaFree(dev_b);
+	cudaFree(dev_c);
+	cudaFree(dev_d);
+	cudaFree(dev_e);
+	cudaFree(dev_f);
+
+	cudaFree(dev_tmpv);
+	cudaFree(dev_tmpv2);
+	cudaFree(dev_tmpv3);
+	cudaFree(dev_tmpm);
+	cudaFree(dev_tmpm2);
+	cudaFree(dev_tmpm3);
+	cudaFree(dev_delta);
+	cudaFree(dev_alpha);
+	cudaFree(dev_beta);
+	cudaFree(dev_gamma);
+
+	cudaFree(dev_y);
+}
+
+
+// Functions
 void showv(double * ptr, int start, int size) {
 	for (int i = start; i < start + size; i++) {
 		cout << ptr[i] << endl;
@@ -245,6 +307,8 @@ __global__ void GPU_copym(double * A, double * B) {
 }
 
 //----------------------------------------------------
+
+//дл€ спуска = size - thread;
 
 void solvev(double * A, double * B, double * X) {
 	// Gaussian elimination 
@@ -451,12 +515,12 @@ int prep() {
 	ifstream A5f;
 	ifstream Ff;
 
-	A1f.open("original_data/A1.dat");
-	A2f.open("original_data/A2.dat");
-	A3f.open("original_data/A3.dat");
-	A4f.open("original_data/A4.dat");
-	A5f.open("original_data/A5.dat");
-	Ff.open("original_data/F");
+	A1f.open("A1.dat");
+	A2f.open("A2.dat");
+	A3f.open("A3.dat");
+	A4f.open("A4.dat");
+	A5f.open("A5.dat");
+	Ff.open("F");
 
 	if (A1f.is_open() && A2f.is_open() && A3f.is_open()
 		&& A4f.is_open() && A5f.is_open() && Ff.is_open()) {
@@ -518,97 +582,361 @@ int prep() {
 
 // Main algorithm
 int algo() {
+
+	CUDA_CALL(cudaMalloc(&dev_a, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_b, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_c, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_d, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_e, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_f, m * sizeof(double)));
+
+	CUDA_CALL(cudaMalloc(&dev_tmpv, m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_tmpv2, m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_tmpv3, m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_tmpm, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_tmpm2, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_tmpm3, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_delta, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_alpha, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_beta, m * m * sizeof(double)));
+	CUDA_CALL(cudaMalloc(&dev_gamma, m * sizeof(double)));
+
+	CUDA_CALL(cudaMalloc(&dev_y, m * sizeof(double)));
+
+	//----------------------------------------------------
+
 	cout << "first start" << endl;
 	solvem(c[0], d[0], alpha[0]);
 	solvem(c[0], e[0], beta[0]);
 	solvev(c[0], f[0], gamma[0]);
 
+	//----------------------------------------------------
+
 	cout << "second start" << endl;
-	mulm(b[1], alpha[0], tmpm);
-	subm(c[1], tmpm, delta);
+	CUDA_CALL(cudaMemcpy(dev_b, b[1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_alpha, alpha[0], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	//CUDA_CALL(cudaMemcpy(dev_tmpm, tmpm, m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_c, c[1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(b[1], alpha[0], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_b, dev_alpha, dev_tmpm);
+	//subm(c[1], tmpm, delta);
+	GPU_subm<<<grid_size_m, block_size_m>>>(dev_c, dev_tmpm, dev_delta);
+
+	//----------------------------------------------------
 
 	cout << "third start" << endl;
-	mulm(b[1], beta[0], tmpm);
-	subm(d[1], tmpm, tmpm2);
+	CUDA_CALL(cudaMemcpy(dev_beta, beta[0], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_d, d[1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(b[1], beta[0], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_b, dev_beta, dev_tmpm);
+	//subm(d[1], tmpm, tmpm2);
+	GPU_subm<<<grid_size_m, block_size_m>>>(dev_d, dev_tmpm, dev_tmpm2);
+
+	CUDA_CALL(cudaMemcpy(delta, dev_delta, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+	CUDA_CALL(cudaMemcpy(tmpm2, dev_tmpm2, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+
 	solvem(delta, tmpm2, alpha[1]);
 	solvem(delta, e[1], beta[1]);
-	mulmv(b[1], gamma[0], tmpv);
-	addv(f[1], tmpv, tmpv2);
+
+	CUDA_CALL(cudaMemcpy(dev_b, b[1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[0], m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_f, f[1], m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulmv(b[1], gamma[0], tmpv);
+	GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_b, dev_gamma, dev_tmpv);
+	//addv(f[1], tmpv, tmpv2);
+	GPU_addv<<<grid_size_m, block_size_m>>>(dev_f, dev_tmpv, dev_tmpv2);
+
+	CUDA_CALL(cudaMemcpy(tmpv2, dev_tmpv2, m * sizeof(double), cudaMemcpyDeviceToHost));
+
 	solvev(delta, tmpv2, gamma[1]);
+
+	//----------------------------------------------------
 
 	cout << "cycle start" << endl;
 	for (int i = 2; i < K - 2; i++) {
 		cout << "i = " << i << " / " << K - 2 << endl;
-		// tmpm3 = a[i]*alpha[i-2]-b[i]
-		mulm(a[i], alpha[i - 2], tmpm);
-		subm(tmpm, b[i], tmpm3);
+		
+		CUDA_CALL(cudaMemcpy(dev_a, a[i], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_alpha, alpha[i - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_b, b[i], m * m * sizeof(double), cudaMemcpyHostToDevice));
 
-		mulm(tmpm3, alpha[i - 1], tmpm);
-		addm(tmpm, c[i], tmpm2);
-		mulm(a[i], beta[i - 2], tmpm);
-		subm(tmpm2, tmpm, delta);
+		//mulm(a[i], alpha[i - 2], tmpm);
+		GPU_mulm<<<grid_size_m, block_size_m>>>(dev_a, dev_alpha, dev_tmpm);
+		//subm(tmpm, b[i], tmpm3);
+		GPU_subm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_b, dev_tmpm3);
 
-		mulm(tmpm3, beta[i - 1], tmpm);
-		addm(tmpm, d[i], tmpm2);
+		//----------------------------------------------------
+
+		CUDA_CALL(cudaMemcpy(dev_alpha, alpha[i - 1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_c, c[i], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_beta, beta[i - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//mulm(tmpm3, alpha[i - 1], tmpm);
+		GPU_mulm<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_alpha, dev_tmpm);
+
+		//addm(tmpm, c[i], tmpm2);
+		GPU_addm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_c, dev_tmpm2);
+
+		//mulm(a[i], beta[i - 2], tmpm);
+		GPU_mulm<<<grid_size_m, block_size_m>>>(dev_a, dev_beta, dev_tmpm);
+
+		//subm(tmpm2, tmpm, delta);
+		GPU_subm<<<grid_size_m, block_size_m>>>(dev_tmpm2, dev_tmpm, dev_delta);
+
+		//----------------------------------------------------
+
+		CUDA_CALL(cudaMemcpy(dev_beta, beta[i - 1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_d, d[i], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//mulm(tmpm3, beta[i - 1], tmpm);
+		GPU_mulm<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_beta, dev_tmpm);
+
+		//addm(tmpm, d[i], tmpm2);
+		GPU_addm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_d, dev_tmpm2);
+
+		CUDA_CALL(cudaMemcpy(delta, dev_delta, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+		CUDA_CALL(cudaMemcpy(tmpm2, dev_tmpm2, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+
 		solvem(delta, tmpm2, alpha[i]);
 
+		//----------------------------------------------------
+		
 		solvem(delta, e[i], beta[i]);
 
-		mulmv(tmpm3, gamma[i - 1], tmpm);
-		subv(f[i], tmpm, tmpm2);
-		mulmv(a[i], gamma[i - 2], tmpm);
-		subv(tmpm2, tmpm, tmpm3);
+		//----------------------------------------------------
+
+		CUDA_CALL(cudaMemcpy(dev_gamma, gamma[i - 1], m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_f, f[i], m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//mulmv(tmpm3, gamma[i - 1], tmpm);
+		GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_gamma, dev_tmpm);
+
+		//subv(f[i], tmpm, tmpm2);
+		GPU_subv<<<grid_size_m, block_size_m>>>(dev_f, dev_tmpm, dev_tmpm2);
+
+		CUDA_CALL(cudaMemcpy(dev_gamma, gamma[i - 2], m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//mulmv(a[i], gamma[i - 2], tmpm);
+		GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_a, dev_gamma, dev_tmpm);
+
+		//subv(tmpm2, tmpm, tmpm3);
+		GPU_subv<<<grid_size_m, block_size_m>>>(dev_tmpm2, dev_tmpm, dev_tmpm3);
+
+		CUDA_CALL(cudaMemcpy(tmpm3, dev_tmpm3, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+
 		solvev(delta, tmpm3, gamma[i]);
 	}
 
+	//----------------------------------------------------
+
 	cout << "fourth start" << endl;
-	mulm(a[K - 2], alpha[K - 4], tmpm);
-	subm(tmpm, b[K - 2], tmpm3);
-	mulm(tmpm3, alpha[K - 3], tmpm);
-	addm(tmpm, c[K - 2], tmpm2);
-	mulm(a[K - 2], beta[K - 4], tmpm);
-	subm(tmpm2, tmpm, delta);
+
+	CUDA_CALL(cudaMemcpy(dev_a, a[K - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_alpha, alpha[K - 4], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_b, b[K - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	
+	//mulm(a[K - 2], alpha[K - 4], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_a, dev_alpha, dev_tmpm);
+
+	//subm(tmpm, b[K - 2], tmpm3);
+	GPU_subm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_b, dev_tmpm3);
+
+	CUDA_CALL(cudaMemcpy(dev_a, a[K - 3], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_c, c[K - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	
+	//mulm(tmpm3, alpha[K - 3], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_alpha, dev_tmpm);
+	
+	//addm(tmpm, c[K - 2], tmpm2);
+	GPU_addm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_c, dev_tmpm2);
+
+	CUDA_CALL(cudaMemcpy(dev_a, a[K - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_beta, beta[K - 4], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(a[K - 2], beta[K - 4], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_a, dev_beta, dev_tmpm);
+
+	//subm(tmpm2, tmpm, delta);
+	GPU_subm<<<grid_size_m, block_size_m>>>(dev_tmpm2, dev_tmpm, dev_delta);
+	
+	//----------------------------------------------------
 
 	cout << "fifth start" << endl;
-	mulm(tmpm3, beta[K - 3], tmpm);
-	addm(tmpm, d[K - 2], tmpm2);
+
+	CUDA_CALL(cudaMemcpy(dev_beta, beta[K - 3], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_d, d[K - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(tmpm3, beta[K - 3], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_beta, dev_tmpm);
+
+	//addm(tmpm, d[K - 2], tmpm2);
+	GPU_addm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_d, dev_tmpm2);
+
+	CUDA_CALL(cudaMemcpy(delta, dev_delta, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+	CUDA_CALL(cudaMemcpy(tmpm2, dev_tmpm2, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+
 	solvem(delta, tmpm2, alpha[K - 2]);
 
+	//----------------------------------------------------
+
 	cout << "sixth start" << endl;
-	mulmv(tmpm3, gamma[K - 3], tmpm);
-	subv(f[K - 2], tmpm, tmpm2);
-	mulmv(a[K - 2], gamma[K - 4], tmpm);
-	subv(tmpm2, tmpm, tmpm3);
+
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[K - 3], m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_f, f[K - 2], m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulmv(tmpm3, gamma[K - 3], tmpm);
+	GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_gamma, dev_tmpm);
+
+	//subv(f[K - 2], tmpm, tmpm2);
+	GPU_subv<<<grid_size_m, block_size_m>>>(dev_f, dev_tmpm, dev_tmpm2);
+
+	CUDA_CALL(cudaMemcpy(dev_a, a[K - 2], m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[K - 4], m * sizeof(double), cudaMemcpyHostToDevice));
+
+
+	//mulmv(a[K - 2], gamma[K - 4], tmpm);
+	GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_a, dev_gamma, dev_tmpm);
+
+	//subv(tmpm2, tmpm, tmpm3);
+	GPU_subv<<<grid_size_m, block_size_m>>>(dev_tmpm2, dev_tmpm, dev_tmpm3);
+
+	CUDA_CALL(cudaMemcpy(tmpm3, dev_tmpm3, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+
 	solvev(delta, tmpm3, gamma[K - 2]);
 
+	//----------------------------------------------------
+
 	cout << "seventh start" << endl;
-	mulm(a[K - 1], alpha[K - 3], tmpm);
-	subm(tmpm, b[K - 1], tmpm3);
-	mulm(tmpm3, alpha[K - 2], tmpm);
-	addm(tmpm, c[K - 1], tmpm2);
-	mulm(a[K - 1], beta[K - 3], tmpm);
-	subm(tmpm2, tmpm, delta);
+
+	CUDA_CALL(cudaMemcpy(dev_a, a[K - 1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_alpha, alpha[K - 3], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_b, b[K - 1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(a[K - 1], alpha[K - 3], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_a, dev_alpha, dev_tmpm);
+
+	//subm(tmpm, b[K - 1], tmpm3);
+	GPU_subm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_b, dev_tmpm3);
+
+	CUDA_CALL(cudaMemcpy(dev_alpha, alpha[K - 2], m * m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_c, c[K - 1], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(tmpm3, alpha[K - 2], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_alpha, dev_tmpm);
+
+	//addm(tmpm, c[K - 1], tmpm2);
+	GPU_addm<<<grid_size_m, block_size_m>>>(dev_tmpm, dev_c, dev_tmpm2);
+
+	CUDA_CALL(cudaMemcpy(dev_beta, beta[K - 3], m * m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulm(a[K - 1], beta[K - 3], tmpm);
+	GPU_mulm<<<grid_size_m, block_size_m>>>(dev_a, dev_beta, dev_tmpm);
+
+	//subm(tmpm2, tmpm, delta);
+	GPU_subm<<<grid_size_m, block_size_m>>>(dev_tmpm2, dev_tmpm, dev_delta);
+
+	//----------------------------------------------------
 
 	cout << "eight start" << endl;
-	mulmv(tmpm3, gamma[K - 2], tmpm);
-	subv(f[K - 1], tmpm, tmpm2);
-	mulmv(a[K - 1], gamma[K - 3], tmpm);
-	subv(tmpm2, tmpm, tmpm3);
+
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[K - 2], m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_f, f[K - 1], m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulmv(tmpm3, gamma[K - 2], tmpm);
+	GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_tmpm3, dev_gamma, dev_tmpm);
+
+	//subv(f[K - 1], tmpm, tmpm2);
+	GPU_subv<<<grid_size_m, block_size_m>>>(dev_f, dev_tmpm, dev_tmpm2);
+
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[K - 3], m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//mulmv(a[K - 1], gamma[K - 3], tmpm);
+	GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_a, dev_gamma, dev_tmpm);
+
+	//subv(tmpm2, tmpm, tmpm3);
+	GPU_subv<<<grid_size_m, block_size_m>>>(dev_tmpm2, dev_tmpm, dev_tmpm3);
+
+	CUDA_CALL(cudaMemcpy(delta, dev_delta, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+	CUDA_CALL(cudaMemcpy(tmpm3, dev_tmpm3, m * m * sizeof(double), cudaMemcpyDeviceToHost));
+
 	solvev(delta, tmpm3, gamma[K - 1]);
 
+	//----------------------------------------------------
+
 	cout << "nine start" << endl;
-	copyv(gamma[K - 1], y[K - 1]);
-	mulmv(alpha[K - 2], y[K - 1], tmpv);
-	addv(tmpv, gamma[K - 2], y[K - 2]);
+
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[K - 1], m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_y, y[K - 1], m * sizeof(double), cudaMemcpyHostToDevice));
+
+	//copyv(gamma[K - 1], y[K - 1]);
+	CUDA_CALL(cudaMemcpy(dev_y, dev_gamma, m * sizeof(double), cudaMemcpyDeviceToDevice));
+	CUDA_CALL(cudaMemcpy(y[K - 1], dev_y, m * sizeof(double), cudaMemcpyDeviceToHost));
+
+	//mulmv(alpha[K - 2], y[K - 1], tmpv);
+	GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_alpha, dev_y, dev_tmpv);
+
+	CUDA_CALL(cudaMemcpy(dev_gamma, gamma[K - 2], m * sizeof(double), cudaMemcpyHostToDevice));
+	CUDA_CALL(cudaMemcpy(dev_y, y[K - 2], m * sizeof(double), cudaMemcpyHostToDevice));
+	
+	//addv(tmpv, gamma[K - 2], y[K - 2]);
+	GPU_addv<<<grid_size_m, block_size_m>>>(dev_tmpv, dev_gamma, dev_y);
+	CUDA_CALL(cudaMemcpy(y[K - 2], dev_y, m * sizeof(double), cudaMemcpyDeviceToHost));
+
+	//----------------------------------------------------
+
+	//–аспараллелить только это?
 
 	cout << "second cycle start" << endl;
 	for (int i = K - 3; i >= 0; i--) {
+
 		cout << "i = " << i << " / " << K - 3 << endl;
-		mulmv(alpha[i], y[i + 1], tmpv);
-		mulmv(beta[i], y[i + 2], tmpv2);
-		subv(tmpv, tmpv2, tmpv3);
-		addv(tmpv3, gamma[i], y[i]);
+
+		CUDA_CALL(cudaMemcpy(dev_alpha, alpha[i], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_y, y[i + 1], m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//mulmv(alpha[i], y[i + 1], tmpv);
+		GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_alpha, dev_y, dev_tmpv);
+
+		CUDA_CALL(cudaMemcpy(dev_beta, beta[i], m * m * sizeof(double), cudaMemcpyHostToDevice));
+		CUDA_CALL(cudaMemcpy(dev_y, y[i + 2], m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//mulmv(beta[i], y[i + 2], tmpv2);
+		GPU_mulmv<<<grid_size_m, block_size_m>>>(dev_alpha, dev_y, dev_tmpv2);
+
+		//subv(tmpv, tmpv2, tmpv3);
+		GPU_subv<<<grid_size_m, block_size_m>>>(dev_tmpv, dev_tmpv2, dev_tmpv3);
+
+		CUDA_CALL(cudaMemcpy(dev_gamma, gamma[i], m * sizeof(double), cudaMemcpyHostToDevice));
+
+		//addv(tmpv3, gamma[i], y[i]);
+		GPU_addv<<<grid_size_m, block_size_m>>>(dev_tmpv3, dev_gamma, dev_y);
+
+		CUDA_CALL(cudaMemcpy(y[i], dev_y, m * sizeof(double), cudaMemcpyDeviceToHost));
+
 	}
+
+	cudaFree(dev_a);
+	cudaFree(dev_b);
+	cudaFree(dev_c);
+	cudaFree(dev_d);
+	cudaFree(dev_e);
+	cudaFree(dev_f);
+
+	cudaFree(dev_tmpv);
+	cudaFree(dev_tmpv2);
+	cudaFree(dev_tmpv3);
+	cudaFree(dev_tmpm);
+	cudaFree(dev_tmpm2);
+	cudaFree(dev_tmpm3);
+	cudaFree(dev_delta);
+	cudaFree(dev_alpha);
+	cudaFree(dev_beta);
+	cudaFree(dev_gamma);
+
+	cudaFree(dev_y);
 
 	return 0;
 }
@@ -626,7 +954,12 @@ int main() {
 	std::cout << "Preparations = " << double(end - begin)
 		/ CLOCKS_PER_SEC << " seconds" << std::endl;
 
+	// CUDA_prep
+	//CUDA_prep();
+
 	// algorithm
+
+	CUDA_CALL(cudaDeviceSynchronize());
 
 	begin = clock();
 	if (algo() != 0) {
@@ -637,6 +970,9 @@ int main() {
 	std::cout << "Algorithm = " << double(end - begin)
 		/ CLOCKS_PER_SEC << " seconds" << std::endl;
 
+	// CUDA_end
+	//CUDA_end();
+
 	// show result and exit
 
 	//showv(y[0], 0, S);
@@ -644,4 +980,7 @@ int main() {
 
 	system("pause");
 	return 0;
+
+
+	//Runtime: 728.236 sec || 13 x 19
 }
